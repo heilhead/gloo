@@ -102,6 +102,73 @@ impl Timeout {
         self.closure.take().unwrap_throw()
     }
 }
+
+/// @TODO Docs.
+#[derive(Debug)]
+pub struct Microtask {
+    closure: Option<Closure<dyn FnMut()>>,
+}
+
+impl Microtask {
+    /// @TODO Docs.
+    pub fn new<F>(callback: F) -> Microtask
+    where
+        F: 'static + FnOnce(),
+    {
+        let closure = Closure::once(callback);
+
+        queue_microtask(closure.as_ref().unchecked_ref::<js_sys::Function>());
+
+        Microtask {
+            closure: Some(closure),
+        }
+    }
+}
+
+/// @TODO Docs.
+#[derive(Debug)]
+#[must_use = "animation frames cancel on drop; either call `forget` or `drop` explicitly"]
+pub struct AnimationFrame {
+    id: Option<f64>,
+    closure: Option<Closure<dyn FnMut()>>,
+}
+
+impl Drop for AnimationFrame {
+    fn drop(&mut self) {
+        if let Some(id) = self.id {
+            cancel_animation_frame(id);
+        }
+    }
+}
+
+impl AnimationFrame {
+    /// @TODO Docs.
+    pub fn new<F>(callback: F) -> AnimationFrame
+    where
+        F: 'static + FnOnce(),
+    {
+        let closure = Closure::once(callback);
+        let id = request_animation_frame(closure.as_ref().unchecked_ref::<js_sys::Function>());
+
+        AnimationFrame {
+            id: Some(id),
+            closure: Some(closure),
+        }
+    }
+
+    /// @TODO Docs.
+    pub fn forget(mut self) -> f64 {
+        let id = self.id.take().unwrap_throw();
+        self.closure.take().unwrap_throw().forget();
+        id
+    }
+
+    /// @TODO Docs.
+    pub fn cancel(mut self) -> Closure<dyn FnMut()> {
+        self.closure.take().unwrap_throw()
+    }
+}
+
 /// A scheduled interval.
 ///
 /// See `Interval::new` for scheduling new intervals.

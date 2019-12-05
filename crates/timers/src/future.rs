@@ -1,13 +1,13 @@
 //! `Future`- and `Stream`-backed timers APIs.
 
-use crate::callback::{Timeout, Interval};
+use crate::callback::{AnimationFrame, Interval, Microtask, Timeout};
 
-use wasm_bindgen::prelude::*;
-use futures_channel::{oneshot, mpsc};
+use futures_channel::{mpsc, oneshot};
 use futures_core::stream::Stream;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{Poll, Context};
+use std::task::{Context, Poll};
+use wasm_bindgen::prelude::*;
 
 /// A scheduled timeout as a `Future`.
 ///
@@ -80,6 +80,93 @@ impl Future for TimeoutFuture {
         Future::poll(Pin::new(&mut self.rx), cx).map(|t| t.unwrap_throw())
     }
 }
+
+/// @TODO Docs.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled or spawned"]
+pub struct MicrotaskFuture {
+    inner: Microtask,
+    rx: oneshot::Receiver<()>,
+}
+
+impl MicrotaskFuture {
+    /// @TODO Docs.
+    pub fn new() -> MicrotaskFuture {
+        let (tx, rx) = oneshot::channel();
+        let inner = Microtask::new(move || {
+            // if the receiver was dropped we do nothing.
+            tx.send(()).unwrap_throw();
+        });
+        MicrotaskFuture { inner, rx }
+    }
+}
+
+impl Future for MicrotaskFuture {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        Future::poll(Pin::new(&mut self.rx), cx).map(|t| t.unwrap_throw())
+    }
+}
+
+/// @TODO Docs.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled or spawned"]
+pub struct AnimationFrameFuture {
+    inner: AnimationFrame,
+    rx: oneshot::Receiver<()>,
+}
+
+impl AnimationFrameFuture {
+    /// @TODO Docs.
+    pub fn new() -> AnimationFrameFuture {
+        let (tx, rx) = oneshot::channel();
+        let inner = AnimationFrame::new(move || {
+            // if the receiver was dropped we do nothing.
+            tx.send(()).unwrap_throw();
+        });
+        AnimationFrameFuture { inner, rx }
+    }
+}
+
+impl Future for AnimationFrameFuture {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        Future::poll(Pin::new(&mut self.rx), cx).map(|t| t.unwrap_throw())
+    }
+}
+
+/// @TODO Docs.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled or spawned"]
+pub struct AnimationFrames {
+    inner: AnimationFrameFuture,
+}
+
+impl AnimationFrames {
+    /// @TODO Docs.
+    pub fn new() -> AnimationFrames {
+        let inner = AnimationFrameFuture::new();
+
+        AnimationFrames { inner }
+    }
+}
+
+impl Stream for AnimationFrames {
+    type Item = ();
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match Future::poll(Pin::new(&mut self.inner), cx) {
+            Poll::Ready(()) => {
+                self.inner = AnimationFrameFuture::new();
+                Poll::Ready(Some(()))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 /// A scheduled interval as a `Stream`.
 ///
 /// See `IntervalStream::new` for scheduling new intervals.
@@ -132,4 +219,34 @@ impl Stream for IntervalStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         Stream::poll_next(Pin::new(&mut self.receiver), cx)
     }
+}
+
+/// @TODO Docs.
+pub fn next_microtask() -> impl Future<Output = ()> {
+    MicrotaskFuture::new()
+}
+
+/// @TODO Docs.
+pub fn next_task() -> impl Future<Output = ()> {
+    TimeoutFuture::new(0)
+}
+
+/// @TODO Docs.
+pub fn next_ms(millis: u32) -> impl Future<Output = ()> {
+    TimeoutFuture::new(millis)
+}
+
+/// @TODO Docs.
+pub fn every_ms(millis: u32) -> impl Stream<Item = ()> {
+    IntervalStream::new(millis)
+}
+
+/// @TODO Doc.
+pub fn next_animation_frame() -> impl Future<Output = ()> {
+    AnimationFrameFuture::new()
+}
+
+/// @TODO Docs.
+pub fn animation_frames() -> impl Stream<Item = ()> {
+    AnimationFrames::new()
 }
